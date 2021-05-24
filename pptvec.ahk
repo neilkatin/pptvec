@@ -1,6 +1,8 @@
 /*! pptvec -- adapted from example_2.ahk
 
    Take VEC footpedal events and allow them to the remapped
+
+   May 2021, Neil Katin
 */
 /*! TheGood
     AHKHID - An AHK implementation of the HID functions.
@@ -22,16 +24,33 @@
     Then press Add and then Call to register.
 */
 
-#Include ../AHKHID.ahk
+#SingleInstance Force
+#Include AHKHID/AHKHID.ahk
 SetTitleMatchMode, 3
+debugWindow := 0
+debug := 0
 
-;Check if the OS is Windows Vista or higher
-bVista := (DllCall("GetVersion") & 0xFF >= 6)
-
-;Create GUI
 Gui +LastFound -Resize -MaximizeBox -MinimizeBox
 Gui, Font, w700 s8, Courier New
-Gui, Add, ListBox, x6 y6 w650 h320 vlbxInput hwndhlbxInput glbxInput_Event,
+Gui, Add, ListBox, x6 y6 w900 h320 vlbxInput hwndhlbxInput glbxInput_Event,
+
+if (A_Args.Length() > 0) {
+    for n, param in A_Args
+    {
+        if (param == "--debugwindow") {
+            debugWindow := 1
+        } else if (param == "--debug") {
+            debug := 1
+        } else {
+            MsgBox Parameter %n% is unknown: '%param%'.  Exiting...
+            ExitApp
+        }
+    }
+}
+
+
+
+
 
 ;Keep handle
 GuiHandle := WinExist()
@@ -50,19 +69,28 @@ vecPedalDownLeft := 0
 vecPedalDownMiddle := 0
 vecPedalDownRight := 0
 
-debugWindow := 1
-
-;Show GUI
-Gui, Show
+if (debugWindow) {
+    ;Create GUI
+    ;Gui +LastFound -Resize -MaximizeBox -MinimizeBox
+    ;Gui, Font, w700 s8, Courier New
+    ;Gui, Add, ListBox, x6 y6 w900 h320 vlbxInput hwndhlbxInput glbxInput_Event,
+    ;Show GUI
+    Gui, Show
+}
 Return
 
 Debug(string) {
     global lbxInput
+    global hlbxInput
     global debugWindow
+    global debug
     if (debugWindow) {
         GuiControl,, lbxInput, % "DEBUG: " . string
         SendMessage, 0x018B, 0, 0,, ahk_id %hlbxInput%                      ; LB_GETCOUNT
         SendMessage, 0x0186, ErrorLevel - 1, 0,, ahk_id %hlbxInput%         ; LB_SETCURSEL
+    }
+    if (debug) {
+        FileAppend, % string "`n", **
     }
 }
 
@@ -84,29 +112,16 @@ InputMsg(wParam, lParam) {
     
     h := AHKHID_GetInputInfo(lParam, II_DEVHANDLE)
     r := AHKHID_GetInputData(lParam, uData)
-    ;;;GuiControl,, lbxInput, % ""
-        ;;;. "Vendor ID: "   Format("0x{1:04x}", AHKHID_GetDevInfo(h, DI_HID_VENDORID,     True))
-        ;;;. " Product ID: "  Format("0x{1:04x}", AHKHID_GetDevInfo(h, DI_HID_PRODUCTID,    True))
-        ;;;. " UsPg/Us: " AHKHID_GetDevInfo(h, DI_HID_USAGEPAGE, True) . "/" . AHKHID_GetDevInfo(h, DI_HID_USAGE, True)
-        ;;;. " Data: " Bin2Hex(&uData, r)
-        ;;;. " Raw: bytes " . r . " content " . format("{1:x} {2:x} {3:x}", NumGet(uData, 0, "UChar"), NumGet(uData, 1, "UChar"), NumGet(uData, 2, "UChar"))
 
     byte1 := NumGet(uData, 1, "UChar")                                   ; origin zero
 
-    DetectPedalDown(vecPedalDownLeft, "left", byte1 & 0x1, lbxInput)
-    DetectPedalDown(vecPedalDownMiddle, "middle", byte1 & 0x2, lbxInput)
-    DetectPedalDown(vecPedalDownRight, "right", byte1 & 0x4, lbxInput)
-
-    ;GuiControl,, lbxInput, % "" "extra line"
-    ;GuiControl,, lbxInput, % "" " "                                     ; blank line
-    SendMessage, 0x018B, 0, 0,, ahk_id %hlbxInput%                      ; LB_GETCOUNT
-    SendMessage, 0x0186, ErrorLevel - 1, 0,, ahk_id %hlbxInput%         ; LB_SETCURSEL
+    DetectPedalDown(vecPedalDownLeft, "left", byte1 & 0x1)
+    DetectPedalDown(vecPedalDownMiddle, "middle", byte1 & 0x2)
+    DetectPedalDown(vecPedalDownRight, "right", byte1 & 0x4)
 }
 
 
-DetectPedalDown(ByRef state, name, value, ByRef labelVar) {
-
-    ;GuiControl,, labelVar, % "" . "DetectPedalDown called.  Pedal " . name . " State " . format("{1:x}", state) . " Value " . format("{1:x}", value)
+DetectPedalDown(ByRef state, name, value) {
 
     if (value != 0) {
         ; pedal is now down
@@ -129,33 +144,52 @@ DetectPedalDown(ByRef state, name, value, ByRef labelVar) {
 NewDownEvent(type) {
 
     Debug("NewDownEvent called: type " . type)
-    windowClass := "PPTFrameClass"
-    controlName := "mdiClass1"
+    windowClass0 := "ahk_class screenClass"
+    windowClass1 := "ahk_class PPTFrameClass"
+    controlName1 := "mdiClass1"
 
-    ; just for testing
-    ;windowClass := "Notepad++"
-    ;controlName := "Scintilla1"
+    keyToSend := ""
+    if (type = "left" ) {
+        keyToSend := "{PgUp}"
+    } else if (type = "middle") {
+        keyToSend := "{PgDn}"
+    }
 
-    pptHandle := WinExist("ahk_class " windowClass)
-
-    if (pptHandle) {
-        ;Debug("NewDownEvent: ppt window handle found: '" . pptHandle . "'")
-
-        keyToSend := ""
-        if (type == "left" ) {
-            keyToSend := "{PgUp}"
-        } else if (type == "middle") {
-            keyToSend := "{PgDn}"
-        }
-
-        if (keyToSend != "") {
-            Debug("sending key " keyToSend " to window class " windowClass " control " controlName)
+    ; controlName is blank if we are in full screen mode; try to use com commands instead
+    if (WinExist(windowClass0)) {
+        ppt := ComObjActive("PowerPoint.Application")
+        if (ppt) {
             try {
-                ControlSend , %controlName%, %keyToSend%, ahk_class %windowClass%
+                ; thanks to reddit user daonlyfreez for com advance suggestion
+                ; https://www.reddit.com/r/AutoHotkey/comments/bqa0fc/forwardback_on_a_powerpoint_2016_presentation/eo4bgvg
+                if (type = "left") {
+                    Debug("sending com prevous")
+                    ppt.ActivePresentation.SlideShowWindow.View.Previous
+                } else if (type = "middle") {
+                    Debug("sending com next")
+                    ppt.ActivePresentation.SlideShowWindow.View.Next
+                }
+                
+                ; don't send page up/down -- we already advanced the page
+                keyToSend := ""
+            } catch e {
+                Debug("NewDownEvent: got an exception when using com: '" . e . "'")
+            }
+        }
+    }
+
+    ; send Page up/down when not in full screen mode
+    if (keyToSend != "") {
+        if (WinExist(windowClass1)) {
+            Debug("sending key '" keyToSend "' to window '" windowClass1 "' control '" controlName1 "'")
+            try {
+                ControlSend , %controlName1%, %keyToSend%, %windowClass1%
             } catch e {
                 Debug("NewDownEvent: got an exception when sending key: '" . e . "'")
             }
         }
     }
+
+    return 1
 }
 
