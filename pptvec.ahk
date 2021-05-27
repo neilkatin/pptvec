@@ -30,10 +30,12 @@ SetTitleMatchMode, 3
 debugWindow := 0
 debug := 0
 
+; Gui window used for debug output
 Gui +LastFound -Resize -MaximizeBox -MinimizeBox
 Gui, Font, w700 s8, Courier New
 Gui, Add, ListBox, x6 y6 w900 h320 vlbxInput hwndhlbxInput glbxInput_Event,
 
+; look for command line arguments
 if (A_Args.Length() > 0) {
     for n, param in A_Args
     {
@@ -50,8 +52,6 @@ if (A_Args.Length() > 0) {
 
 
 
-
-
 ;Keep handle
 GuiHandle := WinExist()
 
@@ -61,20 +61,17 @@ AHKHID_UseConstants()
 ;Intercept WM_INPUT
 OnMessage(0x00FF, "InputMsg")
 
+; magic to detect events from a VEC footpedal (Usagepage 12, Usage 3, get events even if not in foreground)
 AHKHID_AddRegister(1)
 AHKHID_AddRegister(12, 3, GuiHandle, RIDEV_INPUTSINK)
 AHKHID_Register()
 
+; assume no pedals down at the start
 vecPedalDownLeft := 0
 vecPedalDownMiddle := 0
 vecPedalDownRight := 0
 
 if (debugWindow) {
-    ;Create GUI
-    ;Gui +LastFound -Resize -MaximizeBox -MinimizeBox
-    ;Gui, Font, w700 s8, Courier New
-    ;Gui, Add, ListBox, x6 y6 w900 h320 vlbxInput hwndhlbxInput glbxInput_Event,
-    ;Show GUI
     Gui, Show
 }
 Return
@@ -94,10 +91,11 @@ Debug(string) {
     }
 }
 
+; called if close button in debug window is clicked
 GuiClose:
 ExitApp
 
-;Clear on doubleclick
+; called if a row in the debug window is doubleclicked: clear the list
 lbxInput_Event:
     If (A_GuiEvent = "DoubleClick") {
         GuiControl,, lbxInput,|
@@ -106,6 +104,7 @@ lbxInput_Event:
 Return
 
 
+; called on foot pedal events
 InputMsg(wParam, lParam) {
     Local r, h
     Critical    ;Or otherwise you could get ERROR_INVALID_HANDLE
@@ -121,6 +120,9 @@ InputMsg(wParam, lParam) {
 }
 
 
+; called on each event for each pedal (left, middle, right).
+; track state changes; record current state of each pedal
+; call NewDownEvent() if a pedal press is detected
 DetectPedalDown(ByRef state, name, value) {
 
     if (value != 0) {
@@ -141,6 +143,7 @@ DetectPedalDown(ByRef state, name, value) {
     state := value
 }
 
+; called when a new pedal press is detected.  Type is left, middle, or right
 NewDownEvent(type) {
 
     Debug("NewDownEvent called: type " . type)
@@ -154,6 +157,9 @@ NewDownEvent(type) {
     } else if (type = "middle") {
         keyToSend := "{PgDn}"
     }
+
+    ; the problem: pgup/down events don't work if ppt is in full screen mode.  Sending com events does work though (but not if ppt
+    ; is in window mode, so we need two differnt code paths
 
     ; controlName is blank if we are in full screen mode; try to use com commands instead
     if (WinExist(windowClass0)) {
